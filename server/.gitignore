@@ -1,0 +1,31 @@
+# --- Python Environment ---
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- FastAPI/App Specific ---
+.env
+.env.*
+!.env.example
+*.log
+
+# --- Package Management ---
+# (Exclude if you use 'uv' or 'poetry' but keep the lock files)
+dist/
+build/
+*.egg-info/
+
+# --- Testing & Coverage ---
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- IDEs & OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

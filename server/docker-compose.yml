@@ -20,12 +20,11 @@ services:
     depends_on:
       - db
     environment:
-      # Use the EXACT names from your Settings class
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-crm}
-      - POSTGRES_HOST=db
-      - POSTGRES_PORT=5432
+      - GROQ_API_KEY=${GROQ_API_KEY:-groq_api_keys_here}
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-crm}
+      - GROQ_PRIMARY_MODEL=${GROQ_PRIMARY_MODEL:-gemma2-9b-it}
+      - GROQ_LARGE_MODEL=${GROQ_LARGE_MODEL:-llama-3.3-70b-versatile}
+      - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:5173"]}
     ports:
       - "8000:8000"
     volumes:
