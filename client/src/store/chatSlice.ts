@@ -1,40 +1,48 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import { v4 as uuid } from "uuid";
 
-interface ChatInterface {
-    messages: string[];
-    sessionId: string;
-    loading: boolean;
-    error: string;
+export interface Message {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+  toolCalled?: string;
 }
 
-const initialState = {
-    messages: [],
-    sessionId: null,
-    loading: false,
-    error: null,
+interface ChatState {
+  messages: Message[];
+  sessionId: string | null;
+  loading: boolean;
+  error: string | null;
 }
+
+const initialState: ChatState = {
+  messages: [],
+  sessionId: null,
+  loading: false,
+  error: null,
+};
 
 const chatSlice = createSlice({
-    name: "chat",
-    initialState,
-    reducers: {
-        addMessage: (state, action: PayloadAction<ChatInterface>) => {
-            state.messages.push(action.payload.messages);
-        },
-        setLoading: (state, action: PayloadAction<boolean>) => {
-            state.loading = action.payload;
-        },
-        setError: (state, action: PayloadAction<string>) => {
-            state.error = action.payload;
-        },
-        initSession: (state) => {
-            if (!state.sessionId) {
-                state.sessionId = uuid();
-            }
-        },
-    }
+  name: "chat",
+  initialState,
+  reducers: {
+    addMessage: (state, action: PayloadAction<Message>) => {
+      state.messages.push(action.payload);
+    },
+    setLoading: (state, action: PayloadAction<boolean>) => {
+      state.loading = action.payload;
+    },
+    setError: (state, action: PayloadAction<string | null>) => {
+      state.error = action.payload;
+    },
+    initSession: (state) => {
+      if (!state.sessionId) {
+        state.sessionId = uuid();
+      }
+    },
+  },
 });
 
-export const { addMessage, setError, setLoading, initSession } = chatSlice.actions;
+export const { addMessage, setLoading, setError, initSession } = chatSlice.actions;
 export default chatSlice.reducer;

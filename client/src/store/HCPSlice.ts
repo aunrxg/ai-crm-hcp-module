@@ -1,6 +1,6 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
-interface HCPState {
+export interface HCP {
   id: string;
   name: string;
   specialty: string;
@@ -8,31 +8,38 @@ interface HCPState {
   tier: string;
 }
 
-const initialState = {
-  hcps: [] as HCPState[],
-  selectedHCP: null as HCPState | null,
-  searchResults: [] as HCPState[],
-  loading: false,
+interface HCPState {
+  hcps: HCP[];
+  selectedHCP: HCP | null;
+  searchResults: HCP[];
+  loading: boolean;
 }
 
-const HCPSlice = createSlice({
-    name: "hcp",
-    initialState,
-    reducers: {
-        getHCPs: (state, action: PayloadAction<HCPState[]>) => {
-            state.hcps = action.payload;
-        },
-        setSelectedHCP: (state, action: PayloadAction<HCPState, null>) => {
-            state.selectedHCP = action.payload
-        },
-        setSearchResult: (state, action: PayloadAction<HCPState[]>) => {
-            state.searchResults = action.payload;
-        },
-        setLoading: (state, action: PayloadAction<boolean>) => {
-            state.loading = action.payload;
-        },
+const initialState: HCPState = {
+  hcps: [],
+  selectedHCP: null,
+  searchResults: [],
+  loading: false,
+};
+
+const hcpSlice = createSlice({
+  name: "hcp",
+  initialState,
+  reducers: {
+    setHCPs: (state, action: PayloadAction<HCP[]>) => {
+      state.hcps = action.payload;
     },
+    setSelectedHCP: (state, action: PayloadAction<HCP | null>) => {
+      state.selectedHCP = action.payload;
+    },
+    setSearchResults: (state, action: PayloadAction<HCP[]>) => {
+      state.searchResults = action.payload;
+    },
+    setLoading: (state, action: PayloadAction<boolean>) => {
+      state.loading = action.payload;
+    },
+  },
 });
 
-export const { getHCPs, setSelectedHCP, setSearchResult, setLoading } = HCPSlice.actions
-export default HCPSlice.reducer;
+export const { setHCPs, setSelectedHCP, setSearchResults, setLoading } = hcpSlice.actions;
+export default hcpSlice.reducer;
