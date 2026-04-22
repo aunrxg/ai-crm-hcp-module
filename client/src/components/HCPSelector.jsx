@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import {setHCPs, setSearchResults, setSelectedHCP} from "../store/index.ts"
+import { setHCPs, setSearchResults, setSelectedHCP } from "../store/HCPSlice";
+import { updateDraft } from "../store/InteractionSlice";
+import { getHCPs, searchHCPs } from "../api/client";
 
 export default function HCPSelector() {
   const dispatch = useDispatch();
@@ -17,7 +19,7 @@ export default function HCPSelector() {
     const fetchHCPs = async () => {
       try {
         const data = await getHCPs();
-        dispatch(setHCPs(data));
+        dispatch(setHCPs(data.data));
       } catch (err) {
         console.error("Failed to fetch HCPs", err);
       }
@@ -29,10 +31,9 @@ export default function HCPSelector() {
   useEffect(() => {
     const handler = setTimeout(async () => {
       if (!query.trim()) return;
-
       try {
         const results = await searchHCPs(query);
-        dispatch(setSearchResults(results));
+        dispatch(setSearchResults(results.data));
         setShowDropdown(true);
       } catch (err) {
         console.error("Search failed", err);
