@@ -10,7 +10,7 @@ export interface InteractionDraft {
   sentiment: string | null;
   next_action: string | null;
   ai_summary: string | null;
-  entities_json: string | null;
+  entities_json: any;
   follow_up_date: string | null;
   follow_up_task: string | null;
 }
