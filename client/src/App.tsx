@@ -1,6 +1,9 @@
+import HCPSelector from "./components/HCPSelector";
+
 function App() {
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
+      <HCPSelector />
       <div className="mx-auto flex min-h-screen max-w-3xl flex-col items-center justify-center gap-4 px-6 text-center">
         <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-4 py-1 text-sm text-cyan-300">
           React + TypeScript + Tailwind
