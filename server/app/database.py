@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from contextlib import contextmanager
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -11,6 +12,15 @@ Base = declarative_base()
 
 
 def get_db() -> Generator:
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@contextmanager
+def get_db_session() -> Generator:
     db = SessionLocal()
     try:
         yield db
