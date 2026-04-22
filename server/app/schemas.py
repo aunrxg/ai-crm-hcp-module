@@ -1,20 +1,21 @@
-from datetime import date, datetime
+import datetime
 from uuid import UUID
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
 
 class HCPBase(BaseModel):
     name: str
-    specialty: str | None = None
-    hospital: str | None = None
-    city: str | None = None
+    specialty: Optional[str] = None
+    hospital: Optional[str] = None
+    city: Optional[str] = None
     tier: str = "tier2"
 
 
 class HCPCreate(HCPBase):
-    email: str | None = None
-    phone: str | None = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
 
 
 class HCPResponse(HCPBase):
@@ -26,41 +27,41 @@ class HCPResponse(HCPBase):
 class InteractionCreate(BaseModel):
     hcp_id: UUID
     interaction_type: str = "visit"
-    date: date | None = None
-    products_discussed: list[str] | None = None
+    date: Optional[datetime.date] = None
+    products_discussed: Optional[list[str]] = None
     sentiment: str = "neutral"
-    raw_input: str | None = None
-    next_action: str | None = None
-    duration_minutes: int | None = None
+    raw_input: Optional[str] = None
+    next_action: Optional[str] = None
+    duration_minutes: Optional[int] = None
 
 
 class InteractionUpdate(BaseModel):
-    interaction_type: str | None = None
-    date: date | None = None
-    duration_minutes: int | None = None
-    products_discussed: list[str] | None = None
-    sentiment: str | None = None
-    raw_input: str | None = None
-    ai_summary: str | None = None
-    entities_json: dict | None = None
-    next_action: str | None = None
+    interaction_type: Optional[str] = None
+    date: Optional[datetime.date] = None
+    duration_minutes: Optional[int] = None
+    products_discussed: Optional[list[str]] = None
+    sentiment: Optional[str] = None
+    raw_input: Optional[str] = None
+    ai_summary: Optional[str] = None
+    entities_json: Optional[dict] = None
+    next_action: Optional[str] = None
 
 
 class InteractionResponse(BaseModel):
     id: UUID
     hcp_id: UUID
     interaction_type: str
-    date: date
-    duration_minutes: int | None = None
-    products_discussed: list[str] | None = None
+    date: datetime.date
+    duration_minutes: Optional[int] = None
+    products_discussed: Optional[list[str]] = None
     sentiment: str
-    raw_input: str | None = None
-    ai_summary: str | None = None
-    entities_json: dict | None = None
-    next_action: str | None = None
-    created_at: datetime
-    updated_at: datetime | None = None
-    hcp: HCPResponse | None = None
+    raw_input: Optional[str] = None
+    ai_summary: Optional[str] = None
+    entities_json: Optional[dict] = None
+    next_action: Optional[str] = None
+    created_at: datetime.datetime
+    updated_at: Optional[datetime.datetime] = None
+    hcp: Optional[HCPResponse] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -81,20 +82,20 @@ class ChatResponse(BaseModel):
 
 
 class FollowUpCreate(BaseModel):
-    interaction_id: UUID | None = None
-    hcp_id: UUID | None = None
-    due_date: date | None = None
-    task: str | None = None
+    interaction_id: Optional[UUID] = None
+    hcp_id: Optional[UUID] = None
+    due_date: Optional[datetime.date] = None
+    task: Optional[str] = None
     status: str = "pending"
 
 
 class FollowUpResponse(BaseModel):
     id: UUID
-    interaction_id: UUID | None = None
-    hcp_id: UUID | None = None
-    due_date: date | None = None
-    task: str | None = None
+    interaction_id: Optional[UUID] = None
+    hcp_id: Optional[UUID] = None
+    due_date: Optional[datetime.date] = None
+    task: Optional[str] = None
     status: str
-    created_at: datetime
+    created_at: datetime.datetime
 
     model_config = ConfigDict(from_attributes=True)
