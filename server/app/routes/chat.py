@@ -15,6 +15,7 @@ async def chat(payload: ChatRequest) -> dict:
         user_message=payload.message,
         session_id=payload.session_id,
         hcp_id=payload.hcp_id,
+        hcp_name=payload.hcp_name,
         interaction_draft=payload.interaction_draft or {},
         history=payload.history or [],
     )

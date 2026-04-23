@@ -70,6 +70,7 @@ class ChatRequest(BaseModel):
     message: str
     session_id: str
     hcp_id: str | None = None
+    hcp_name: str | None = None
     interaction_draft: dict | None = None
     history: list | None = None
 

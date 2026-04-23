@@ -7,11 +7,12 @@ const api = axios.create({
   },
 })
 
-export const sendMessage = (message, sessionId, hcpId, draft, history) =>
+export const sendMessage = (message, sessionId, hcpId, hcpName, draft, history) =>
   api.post('/api/chat', {
     message,
     session_id: sessionId,
     hcp_id: hcpId ?? null,
+    hcp_name: hcpName,
     interaction_draft: draft ?? {},
     history: history ?? [],
   })

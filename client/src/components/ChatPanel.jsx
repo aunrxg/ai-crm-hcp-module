@@ -53,6 +53,7 @@ export default function ChatPanel() {
         trimmedText,
         sessionId,
         selectedHCP?.id,
+        selectedHCP?.name,
         draft,
         messages
       );
