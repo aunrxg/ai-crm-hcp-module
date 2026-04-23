@@ -1,3 +1,4 @@
+import pstats
 import json
 import uuid
 from datetime import date, datetime, timedelta
@@ -8,7 +9,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.database import get_db_session
+from app.database import get_db_session, SessionLocal
 from app.models import FollowUp, HCP, Interaction
 
 
@@ -30,10 +31,27 @@ def _safe_json_parse(text: str, fallback: dict | list | None = None) -> dict | l
     return fallback if fallback is not None else {}
 
 
-def _to_date(value: str | None) -> date | None:
+def _to_date(value) -> date | None:
     if not value:
         return None
-    return datetime.fromisoformat(value).date()
+    if isinstance(value, date):
+        return value
+    v = str(value).strip().lower()
+    if v in ("today", "now", "current", ""):
+        return datetime.utcnow().date()
+    if v == "yesterday":
+        return (datetime.utcnow() - timedelta(days=1)).date()
+
+    try:
+        return datetime.fromisoformat(value).date()
+    except (ValueError, TypeError):
+        pass
+    for fmt in ("%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%B %d %Y", "%b %d %Y"):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+        return datetime.utcnow().date()
 
 
 def _draft_from_interaction(interaction: Interaction, hcp: HCP | None = None) -> dict:
@@ -45,6 +63,7 @@ def _draft_from_interaction(interaction: Interaction, hcp: HCP | None = None) ->
             reverse=True,
         )[0]
     return {
+        "interaction_id": str(interaction.id),
         "hcp_id": str(interaction.hcp_id) if interaction.hcp_id else None,
         "hcp_name": hcp.name if hcp else (interaction.hcp.name if interaction.hcp else None),
         "interaction_type": interaction.interaction_type,
@@ -97,7 +116,10 @@ def log_interaction(
     with get_db_session() as db:
         hcp = db.get(HCP, parsed_hcp_id)
         if not hcp:
-            raise ValueError(f"HCP not found for id: {hcp_id}")
+            return {
+                "error": f"HCP not found for id: {hcp_id}. Please select a valid HCP.",
+                "success": False,
+            }
 
         summary_prompt = (
             "You are a pharma CRM assistant. Summarize the following rep note in 2-3 concise "
@@ -144,6 +166,8 @@ def log_interaction(
             "interaction_id": str(interaction.id),
             "ai_summary": interaction.ai_summary,
             "entities_json": interaction.entities_json,
+            "products_discussed": entities_json.get("drugs_mentioned", []),
+            "sentiment": sentiment,
             "interaction_draft": draft,
         }
 
@@ -249,7 +273,10 @@ def get_hcp_profile(hcp_id: str) -> dict:
     with get_db_session() as db:
         hcp = db.get(HCP, parsed_hcp_id)
         if not hcp:
-            raise ValueError(f"HCP not found for id: {hcp_id}")
+            return {
+                "error": f"HCP not found for id: {hcp_id}. Please select a valid HCP.",
+                "success": False,
+            }
 
         interactions = (
             db.query(Interaction)
@@ -304,14 +331,23 @@ def schedule_follow_up(
     due_date: str = None,
 ) -> dict:
     """
-    Schedule and persist a follow-up task for a specific HCP interaction.
+    Schedule a specific follow-up task for a FUTURE action after an interaction.
+    Use ONLY when the rep explicitly mentions scheduling, booking, or planning
+    something - e.g. 'Schedule a follow-up', 'I will meet him next week', 'remind me to send samples',
+    'i will call him tomorrow', 'book a demo next week', 'plan a call on friday' etc.
+
+    Do NOT use this tool for logging past interactions or general conversation.
+    Do NOT use this for analysis, summaries, or reviewing past visits.
+    Do NOT call this unless the rep has explicitly asked to schedule something.
+
+    Requires a real interaction_id from a previously logged interaction in this
+    session. If no interaction has been logged yet, ask the rep to log one first.
 
     If `due_date` is provided, it is used directly. Otherwise this tool asks the Groq
-    large model to suggest an optimal date using business policy signals:
+    large model to suggest an optimal date based on HCP tier.
     - tier1: 7 days
     - tier2: 14 days
     - tier3: 21 days
-    and recent interaction gap context.
 
     It writes the follow-up record and returns both a confirmation payload and form-state
     updates (`follow_up_date`, `follow_up_task`) for the interaction draft.
@@ -342,9 +378,16 @@ def schedule_follow_up(
         interaction = db.get(Interaction, parsed_interaction_id)
         hcp = db.get(HCP, parsed_hcp_id)
         if not interaction:
-            raise ValueError(f"Interaction not found for id: {interaction_id}")
+            return {
+                "error": f"Could not find interaction with id '{interaction_id}'"
+                    "please ensure an interaction has been logged first.",
+                "success": False,
+            }
         if not hcp:
-            raise ValueError(f"HCP not found for id: {hcp_id}")
+            return {
+                "error": f"HCP not found for id: {hcp_id}. Please select a valid HCP.",
+                "success": False,
+            }
 
         computed_due_date = _to_date(due_date)
         if not computed_due_date:
@@ -401,15 +444,12 @@ def schedule_follow_up(
 @tool
 def summarize_and_analyze_visit(hcp_id: str) -> dict:
     """
-    Generate a structured analytics snapshot over all interactions for one HCP.
+    Analyze and summarize ALL past interactions with an HCP.
+    Use when the rep asks for analysis, insights, patterns, or a review of their relationship with the HCP.
+    - e.g. 'analyze my visits', 'how have my visits with Dr. X gone?', 'give me a summary of my interactions', 'what's the sentiment tend?', 'how is my engagemnet with this doctor?'.
 
-    This tool gathers complete interaction history, then uses the Groq large model to
-    produce JSON analytics with sentiment trend, top products, days since last visit,
-    top objections, recommended action, and a risk flag (true when no visit in 30+ days).
-    It also returns a concise human-readable summary string for direct display.
-
-    Use when a rep asks for strategic guidance, risk review, or progression analysis
-    across historical interactions for a specific HCP.
+    Do NOT require an interaction_id. Only needs hcp_id.
+    Do NOT use this for scheduling or logging - only for analysis of exisiting data.
 
     Returns:
     - `analysis`: structured analysis dict
@@ -420,7 +460,10 @@ def summarize_and_analyze_visit(hcp_id: str) -> dict:
     with get_db_session() as db:
         hcp = db.get(HCP, parsed_hcp_id)
         if not hcp:
-            raise ValueError(f"HCP not found for id: {hcp_id}")
+            return {
+                "error": f"HCP not found for id: {hcp_id}. Please select a valid HCP.",
+                "success": False,
+            }
 
         interactions = (
             db.query(Interaction)
