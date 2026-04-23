@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { addMessage, setLoading, setError, initSession } from "../store/chatSlice";
-import { updateDraft } from "../store/InteractionSlice";
+import { updateDraft, setIsSaved, setLastSavedId } from "../store/InteractionSlice";
 import { sendMessage } from "../api/client";
 import MessageBubble from "./MessageBubble";
 
@@ -71,6 +71,16 @@ export default function ChatPanel() {
       
       if (interaction_draft) {
         dispatch(updateDraft(interaction_draft));
+        
+        // Final wiring check (Point 6)
+        if (tool_called === "log_interaction") {
+          dispatch(setIsSaved(true));
+          dispatch(setLastSavedId(response.data.interaction_id));
+        } else if (tool_called === "edit_interaction") {
+          // Fields are updated via updateDraft(interaction_draft)
+          dispatch(setIsSaved(false)); // or keep true if it was already saved? 
+          // Usually an edit to a saved interaction should probably show a "updated" status.
+        }
       }
     } catch (err) {
       console.error("Chat error:", err);

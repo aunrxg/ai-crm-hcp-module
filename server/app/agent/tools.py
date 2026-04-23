@@ -324,8 +324,19 @@ def schedule_follow_up(
     - `confirmation_message`
     - `interaction_draft_updates`
     """
-    parsed_interaction_id = uuid.UUID(interaction_id)
-    parsed_hcp_id = uuid.UUID(hcp_id)
+    parsed_interaction_id = None
+    if interaction_id and interaction_id != "None" and interaction_id != "null":
+        try:
+            parsed_interaction_id = uuid.UUID(interaction_id)
+        except ValueError:
+            pass
+            
+    parsed_hcp_id = None
+    if hcp_id and hcp_id != "None" and hcp_id != "null":
+        try:
+            parsed_hcp_id = uuid.UUID(hcp_id)
+        except ValueError:
+            pass
 
     with get_db_session() as db:
         interaction = db.get(Interaction, parsed_interaction_id)

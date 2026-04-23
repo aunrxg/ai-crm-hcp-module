@@ -38,7 +38,15 @@ def llm_node(state: AgentState) -> AgentState:
         model=settings.groq_primary_model,
         temperature=0,
     ).bind_tools(TOOLS)
-    messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
+    
+    # Inject active context into the system prompt
+    context = f"\n\nCURRENT CONTEXT:\n- Active HCP ID: {state.get('hcp_id') or 'Unknown'}\n"
+    if state.get('interaction_draft'):
+        context += f"- Current Interaction Draft: {json.dumps(state['interaction_draft'])}\n"
+    
+    full_system_prompt = SYSTEM_PROMPT + context
+    
+    messages = [SystemMessage(content=full_system_prompt)] + state["messages"]
     ai_response = llm.invoke(messages)
     return {"messages": [ai_response]}
 

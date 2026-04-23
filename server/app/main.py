@@ -7,6 +7,7 @@ import app.models  # noqa: F401
 from app.routes.chat import router as chat_router
 from app.routes.hcp import router as hcp_router
 from app.routes.interactions import router as interactions_router
+from app.seed import seed_hcps
 
 app = FastAPI(title="AI CRM HCP Module API")
 
@@ -30,4 +31,7 @@ def read_root() -> dict[str, str]:
 
 @app.on_event("startup")
 def on_startup() -> None:
+    # Create tables
     Base.metadata.create_all(bind=engine)
+    # Seed data if empty
+    seed_hcps()
