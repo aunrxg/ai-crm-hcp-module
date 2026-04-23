@@ -41,8 +41,14 @@ const chatSlice = createSlice({
         state.sessionId = uuid();
       }
     },
+    resetChat: (state) => {
+      state.messages = [];
+      state.sessionId = uuid();
+      state.loading = false;
+      state.error = null;
+    },
   },
 });
 
-export const { addMessage, setLoading, setError, initSession } = chatSlice.actions;
+export const { addMessage, setLoading, setError, initSession, resetChat } = chatSlice.actions;
 export default chatSlice.reducer;

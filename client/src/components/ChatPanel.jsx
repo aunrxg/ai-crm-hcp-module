@@ -18,7 +18,7 @@ export default function ChatPanel() {
   const messagesEndRef = useRef(null);
   const [inputText, setInputText] = useState("");
 
-  const { messages, loading, sessionId } = useSelector((state) => state.chat);
+  const { messages, loading, sessionId, error } = useSelector((state) => state.chat);
   const { selectedHCP } = useSelector((state) => state.hcp);
   const { draft } = useSelector((state) => state.interaction);
 
@@ -59,6 +59,7 @@ export default function ChatPanel() {
       );
 
       const { response: assistantContent, tool_called, interaction_draft } = response.data;
+      console.log("Response from server: ", response.data);
 
       const assistantMessage = {
         id: (Date.now() + 1).toString(),
@@ -85,7 +86,8 @@ export default function ChatPanel() {
       }
     } catch (err) {
       console.error("Chat error:", err);
-      dispatch(setError("Failed to send message. Please try again."));
+      dispatch(setError("Connection error, please retry"));
+      setTimeout(() => dispatch(setError(null)), 5000);
     } finally {
       dispatch(setLoading(false));
     }
@@ -150,11 +152,19 @@ export default function ChatPanel() {
         )}
       </main>
 
+      {/* Error Toast */}
+      {error && (
+        <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 bg-red-100 border border-red-200 text-red-700 px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-in fade-in slide-in-from-bottom duration-300 z-50 flex items-center space-x-2">
+          <span>⚠️</span>
+          <span>{error}</span>
+        </div>
+      )}
+
       {/* Input Area */}
       <footer className="p-6 bg-white border-t border-gray-200">
         <div className="relative group">
           <textarea
-            rows="2"
+            rows="1"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}

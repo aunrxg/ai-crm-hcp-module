@@ -3,6 +3,8 @@ import { useSelector, useDispatch } from "react-redux";
 import ChatPanel from "./ChatPanel";
 import FormPanel from "./FormPanel";
 import HCPSelector from "./HCPSelector";
+import { clearDraft, setIsSaved } from "../store/InteractionSlice";
+import { resetChat } from "../store/chatSlice";
 
 export default function LogInteractionScreen() {
   const dispatch = useDispatch();
@@ -22,6 +24,12 @@ export default function LogInteractionScreen() {
     month: "long",
     day: "numeric",
   });
+
+  const handleClear = () => {
+    dispatch(clearDraft());
+    dispatch(setIsSaved(false));
+    dispatch(resetChat());
+  };
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 text-slate-900 overflow-hidden font-inter">
@@ -57,9 +65,17 @@ export default function LogInteractionScreen() {
           </span>
         </div>
 
-        <div className="flex items-center space-x-2 bg-indigo-50 px-4 py-2 rounded-xl border border-indigo-100">
-          <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></div>
-          <span className="text-sm font-bold text-indigo-700">Log Interaction</span>
+        <div className="flex items-center space-x-3">
+          <button 
+            onClick={handleClear}
+            className="px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200"
+          >
+            Clear Form
+          </button>
+          <div className="flex items-center space-x-2 bg-indigo-50 px-4 py-2 rounded-xl border border-indigo-100">
+            <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></div>
+            <span className="text-sm font-bold text-indigo-700">Log Interaction</span>
+          </div>
         </div>
       </header>
 

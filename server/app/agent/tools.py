@@ -126,15 +126,19 @@ def log_interaction(
             "sentences focused on clinical interest, concerns, and next step.\n\n"
             f"Note:\n{raw_input}"
         )
-        summary_text = _llm(settings.groq_primary_model).invoke(summary_prompt).content
+        try:
+            summary_text = _llm(settings.groq_primary_model).invoke(summary_prompt).content
+            
+            extraction_prompt = (
+                "You are a pharma CRM assistant. Extract structured data from the rep's visit note.\n"
+                "Return ONLY valid JSON with keys: drugs_mentioned, objections, competitors, action_items.\n"
+                "No explanation, just JSON.\n\n"
+                f"Note:\n{raw_input}"
+            )
+            entities_raw = _llm(settings.groq_primary_model).invoke(extraction_prompt).content
+        except Exception as e:
+            return {"error": f"Groq API error while logging interaction. Please try again later.", "success": False}
 
-        extraction_prompt = (
-            "You are a pharma CRM assistant. Extract structured data from the rep's visit note.\n"
-            "Return ONLY valid JSON with keys: drugs_mentioned, objections, competitors, action_items.\n"
-            "No explanation, just JSON.\n\n"
-            f"Note:\n{raw_input}"
-        )
-        entities_raw = _llm(settings.groq_primary_model).invoke(extraction_prompt).content
         entities_json = _safe_json_parse(
             entities_raw,
             fallback={
@@ -222,7 +226,11 @@ def edit_interaction(
             "sentiment (positive/neutral/negative), next_action, ai_summary.\n"
             "No explanation, just JSON."
         )
-        delta_raw = _llm(settings.groq_primary_model).invoke(prompt).content
+        try:
+            delta_raw = _llm(settings.groq_primary_model).invoke(prompt).content
+        except Exception as e:
+            return {"error": f"Groq API error while editing interaction. Please try again later.", "success": False}
+
         delta = _safe_json_parse(delta_raw, fallback={})
 
         allowed_fields = {
@@ -314,7 +322,11 @@ def get_hcp_profile(hcp_id: str) -> dict:
             f"HCP: {json.dumps(hcp_payload)}\n"
             f"Recent interactions: {json.dumps(recent_payload)}"
         )
-        narrative = _llm(settings.groq_primary_model).invoke(prompt).content.strip()
+        try:
+            narrative = _llm(settings.groq_primary_model).invoke(prompt).content.strip()
+        except Exception as e:
+            return {"error": f"Groq API error while generating profile briefing. Please try again later.", "success": False}
+
 
         return {
             "hcp": hcp_payload,
@@ -407,7 +419,11 @@ def schedule_follow_up(
                 "Also factor the last visit gap. Return ONLY JSON: {\"due_date\":\"YYYY-MM-DD\"}.\n\n"
                 f"today={datetime.utcnow().date().isoformat()}, tier={hcp.tier}, last_visit_gap_days={gap_days}"
             )
-            llm_raw = _llm(settings.groq_large_model).invoke(prompt).content
+            try:
+                llm_raw = _llm(settings.groq_large_model).invoke(prompt).content
+            except Exception as e:
+                return {"error": f"Groq API error while scheduling follow-up. Please try again later.", "success": False}
+
             parsed = _safe_json_parse(llm_raw, fallback={})
             computed_due_date = _to_date(parsed.get("due_date")) if isinstance(parsed, dict) else None
 
@@ -504,7 +520,11 @@ def summarize_and_analyze_visit(hcp_id: str) -> dict:
             "risk_flag (bool, true if no visit in 30+ days).\n"
             f"Records: {records_json}"
         )
-        analysis_raw = _llm(settings.groq_large_model).invoke(prompt).content
+        try:
+            analysis_raw = _llm(settings.groq_large_model).invoke(prompt).content
+        except Exception as e:
+            return {"error": f"Groq API error while analyzing visits. Please try again later.", "success": False}
+
         analysis = _safe_json_parse(
             analysis_raw,
             fallback={
