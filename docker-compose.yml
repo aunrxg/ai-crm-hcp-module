@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16
+    container_name: hcp-db
+    environment:
+      POSTGRES_DB: crm
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - hcp_pgdata:/var/lib/postgresql/data
+
+  server:
+    build: ./server
+    container_name: hcp-server
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    env_file: ./server/.env
+    depends_on:
+      - db
+    volumes:
+      - ./server:/app
+
+  client:
+    build: ./client
+    container_name: hcp-client
+    command: npm run dev -- --host
+    ports:
+      - "5173:5173"
+    depends_on:
+      - server
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+
+volumes:
+  hcp_pgdata:
