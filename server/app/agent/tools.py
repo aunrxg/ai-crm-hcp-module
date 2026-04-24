@@ -315,13 +315,33 @@ def get_hcp_profile(hcp_id: str) -> dict:
             "email": hcp.email,
             "phone": hcp.phone,
         }
+        
+        days_since = None
+        if interactions and interactions[0].date:
+            days_since = (datetime.utcnow().date() - interactions[0].date).days
 
-        prompt = (
-            "You are a pharma CRM assistant. Create a concise rep briefing for this HCP.\n"
-            "Cover: specialization, sentiment trend, last visit date, and top products they respond to.\n\n"
-            f"HCP: {json.dumps(hcp_payload)}\n"
-            f"Recent interactions: {json.dumps(recent_payload)}"
-        )
+        prompt = f"""You are a pharma CRM assistant briefing a field rep before a visit.
+        Write a SHORT, SPECIFIC briefing using ONLY the data below. 
+        Do NOT give generic advice. Every sentence must reference actual data from the profile.
+
+        HCP DATA:
+        Name: {hcp.name}
+        Specialty: {hcp.specialty}
+        Hospital: {hcp.hospital}, {hcp.city}
+        Tier: {hcp.tier}
+        Days since last visit: {days_since if days_since is not None else 'No previous visits'}
+
+        RECENT INTERACTIONS ({len(interactions)} total):
+        {json.dumps(recent_payload, indent=2)}
+
+        Write 3-4 sentences covering:
+        1. Who they are (specialty + hospital)
+        2. Last interaction date and sentiment (or note if no visits yet)
+        3. Products they responded to (or note if none yet)  
+        4. One specific recommended next step based on actual data
+
+        Be direct and factual. Do not say 'remember to', 'don't forget to', or give generic sales advice."""
+
         try:
             narrative = _llm(settings.groq_primary_model).invoke(prompt).content.strip()
         except Exception as e:
@@ -332,6 +352,7 @@ def get_hcp_profile(hcp_id: str) -> dict:
             "hcp": hcp_payload,
             "recent_interactions": recent_payload,
             "llm_narrative": narrative,
+            "day_since_last_visit": days_since,
         }
 
 
