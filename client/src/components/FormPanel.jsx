@@ -273,7 +273,7 @@ export default function FormPanel() {
                    <Skeleton className="h-4 w-full mt-2" />
                 </div>
               ) : draft.follow_up_date || draft.follow_up_task ? (
-                <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl p-5 text-white shadow-lg animate-in zoom-in duration-500">
+                <div className="bg-linear-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl p-5 text-white shadow-lg animate-in zoom-in duration-500">
                   <div className="flex items-start justify-between mb-4">
                     <div className="bg-white/20 p-2 rounded-xl backdrop-blur-sm">
                       <span className="text-xl">📅</span>
