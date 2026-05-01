@@ -64,6 +64,9 @@ class Interaction(Base):
     ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     entities_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     next_action: Mapped[str | None] = mapped_column(Text, nullable=True)
+    time: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    attendees: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    outcomes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -33,6 +33,9 @@ class InteractionCreate(BaseModel):
     raw_input: Optional[str] = None
     next_action: Optional[str] = None
     duration_minutes: Optional[int] = None
+    time: Optional[str] = None
+    attendees: Optional[list] = None
+    outcomes: Optional[str] = None
 
 
 class InteractionUpdate(BaseModel):
@@ -45,6 +48,9 @@ class InteractionUpdate(BaseModel):
     ai_summary: Optional[str] = None
     entities_json: Optional[dict] = None
     next_action: Optional[str] = None
+    time: Optional[str] = None
+    attendees: Optional[list] = None
+    outcomes: Optional[str] = None
 
 
 class InteractionResponse(BaseModel):
@@ -59,6 +65,9 @@ class InteractionResponse(BaseModel):
     ai_summary: Optional[str] = None
     entities_json: Optional[dict] = None
     next_action: Optional[str] = None
+    time: Optional[str] = None
+    attendees: Optional[list] = None
+    outcomes: Optional[str] = None
     created_at: datetime.datetime
     updated_at: Optional[datetime.datetime] = None
     hcp: Optional[HCPResponse] = None

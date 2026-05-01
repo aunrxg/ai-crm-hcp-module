@@ -74,6 +74,13 @@ def _draft_from_interaction(interaction: Interaction, hcp: HCP | None = None) ->
         "next_action": interaction.next_action,
         "ai_summary": interaction.ai_summary,
         "entities_json": interaction.entities_json or {},
+        "time": interaction.time,
+        "attendees": interaction.attendees or [],
+        "outcomes": interaction.outcomes or "",
+        "topics_discussed": interaction.raw_input or "",
+        "materials_shared": interaction.products_discussed or [],
+        "follow_up_actions": interaction.next_action or "",
+        "ai_suggested_follow_ups": (interaction.entities_json or {}).get("action_items", []),
         "follow_up_date": latest_follow_up.due_date.isoformat() if latest_follow_up and latest_follow_up.due_date else None,
         "follow_up_task": latest_follow_up.task if latest_follow_up else None,
     }
@@ -89,6 +96,9 @@ def log_interaction(
     products_discussed: list = None,
     sentiment: str = "neutral",
     next_action: str = None,
+    attendees: list = None,
+    outcomes: str = None,
+    time: str = None,
 ) -> dict:
     """
     Log a new HCP interaction to the CRM and enrich it with LLM-generated intelligence.
@@ -131,7 +141,7 @@ def log_interaction(
             
             extraction_prompt = (
                 "You are a pharma CRM assistant. Extract structured data from the rep's visit note.\n"
-                "Return ONLY valid JSON with keys: drugs_mentioned, objections, competitors, action_items.\n"
+                "Return ONLY valid JSON with keys: drugs_mentioned, objections, competitors, action_items, attendees_mentioned.\n"
                 "No explanation, just JSON.\n\n"
                 f"Note:\n{raw_input}"
             )
@@ -146,13 +156,17 @@ def log_interaction(
                 "objections": [],
                 "competitors": [],
                 "action_items": [],
+                "attendees_mentioned": [],
             },
         )
+
+        final_attendees = attendees if attendees is not None else entities_json.get("attendees_mentioned", [])
 
         interaction = Interaction(
             hcp_id=parsed_hcp_id,
             interaction_type=interaction_type,
             date=interaction_date,
+            time=time,
             duration_minutes=duration_minutes,
             products_discussed=products,
             sentiment=sentiment,
@@ -160,6 +174,8 @@ def log_interaction(
             ai_summary=summary_text.strip(),
             entities_json=entities_json,
             next_action=next_action,
+            attendees=final_attendees,
+            outcomes=outcomes,
         )
         db.add(interaction)
         db.commit()
