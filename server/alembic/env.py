@@ -15,7 +15,7 @@ import app.models  # noqa: F401
 # access to the values within the .ini file in use.
 config = context.config
 
-load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+load_dotenv(Path(__file__).resolve().parents[1] / ".env.local")
 database_url = os.getenv("DATABASE_URL")
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
