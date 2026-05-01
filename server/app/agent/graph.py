@@ -29,14 +29,34 @@ CRITICAL RULES:
 - When calling any tool requiring hcp_id, use EXACTLY: {hcp_id}
 - When calling any tool requiring interaction_id, use EXACTLY: {interaction_id}
 - If Last Interaction ID is "None", no interaction has been logged yet this session
+- If interaction_id is "None", DO NOT call schedule_follow_up or edit_interaction
 - NEVER invent, guess, or substitute IDs — use only the values shown above
 
-You have access to 5 tools:
-1. log_interaction      — use when the rep describes a visit/call/meeting
-2. edit_interaction     — use when the rep wants to change something already logged
-3. get_hcp_profile      — use when the rep asks about an HCP before or during a visit
-4. schedule_follow_up   — use when the rep mentions a follow-up task or date
-5. summarize_and_analyze_visit — use when the rep asks for analytics or a summary
+=== TOOL SELECTION — FOLLOW EXACTLY ===
+Use get_hcp_profile when:
+  - Rep asks "tell me about", "who is", "profile", "brief me", "info about"
+  - Rep asks anything about the HCP before a visit
+  → ONLY pass hcp_id. No other parameters needed.
+
+Use log_interaction when:
+  - Rep describes a completed visit, call, or meeting
+  - Keywords: "met", "visited", "called", "discussed", "just had"
+
+Use edit_interaction when:
+  - Rep wants to change something already logged
+  - Keywords: "change", "update", "edit", "actually", "correct"
+  - ONLY call if Last Interaction ID is NOT "None"
+
+Use schedule_follow_up when:
+  - Rep EXPLICITLY asks to schedule or book something future
+  - Keywords: "schedule", "book", "remind me", "follow up on"
+  - ONLY call if Last Interaction ID is NOT "None"
+  - NEVER call this just because a follow-up is mentioned in a profile or summary
+
+Use summarize_and_analyze_visit when:
+  - Rep asks for analysis, trends, history, patterns
+  - Keywords: "analyze", "summary", "how have", "trend", "review"
+
 
 RULES:
 - Always use the hcp_id from the session context above — never make one up
@@ -79,6 +99,50 @@ def llm_node(state: AgentState) -> AgentState:
 
 _tool_node = ToolNode(TOOLS)
 
+def _sanitize_args(args: dict, state: AgentState) -> dict:
+    """
+    Clean up tool call arguments:
+    1. Fix hcp_id hallucinations
+    2. Fix interaction_id hallucinations  
+    3. Remove any None/null values for required ID fields rather than passing them and causing a 400 from Groq
+    """
+    real_hcp_id = state.get("hcp_id")
+    real_interaction_id = state.get("interaction_id")
+    cleaned = dict(args)
+
+    # fix hcp_id
+    if real_hcp_id and "hcp_id" in cleaned:
+        if not cleaned["hcp_id"] or cleaned["hcp_id"] in (None, "None", "null", "unknown"):
+            cleaned["hcp_id"] = real_hcp_id
+        elif cleaned["hcp_id"] != real_hcp_id:
+            cleaned["hcp_id"] = real_hcp_id
+
+    # fix interaction_id - if it's None/fake, remove it entirely rather then passing a bad value    
+    if real_interaction_id and "interaction_id" in cleaned:
+        val = cleaned["interaction_id"]
+        is_fake = (
+            val in None
+            or str(val).lower() in (
+                "none", "null", "unknown", "placeholder",
+                "last logged interaction id",
+                "last_logged_interaction_id",
+                "interaction_id", "",
+            )
+            or (isinstance(val, str) and len(val) < 10)
+        )
+        if is_fake:
+            if real_interaction_id:
+                cleaned["interaction_id"] = real_interaction_id
+            else:
+                del cleaned["interaction_id"]
+
+    # fix date field
+    for date_field in ("date", "due_date"):
+        if date_field in cleaned and cleaned[date_field] is None:
+            cleaned[date_field] = datetime.utcnow().date().isoformat()
+
+    return cleaned
+
 def sanitized_tool_node(state: AgentState) -> AgentState:
     """
     Before passing to ToolNode, rewrite any hcp_id in tool call arguments with the real hcp_id from AgentState if they don't match.
@@ -90,68 +154,36 @@ def sanitized_tool_node(state: AgentState) -> AgentState:
     if real_hcp_id and last_message and hasattr(last_message, "tool_calls"):
         fixed_tool_calls = []
         for tc in last_message.tool_calls:
-            args = dict(tc.get("args", {}))
+            args = _sanitize_args(tc.get("args", {}), state)
 
-            # force the hcp id if the llm used something else or left blank
-            if "hcp_id" in args and args["hcp_id"] != real_hcp_id:
-                print(f"[sanitizer] LLM passed hcp_id={args['hcp_id']!r}, overriding with real={real_hcp_id!r}")
-                args["hcp_id"] = real_hcp_id
-            elif "hcp_id" not in args:
-                args["hcp_id"] = real_hcp_id
-
-            # fix interaction_id halluccination
-            if "interaction_id" in args: 
-                real_interaction_id = state.get("interaction_id")
-                passed_id = args["interaction_id"]
-
-                # fake placeholders
-                is_fake = (
-                    not passed_id
-                    or passed_id.lower() in (
-                        "last logged interaction id",
-                        "last_logged_interaction_id", 
-                        "interaction_id",
-                        "none",
-                        "null",
-                        "unknown",
-                        "placeholder",
-                    )
-                    or len(passed_id) < 10
-                )
-
-                if is_fake and real_interaction_id:
-                    print(f"[sanitizer] LLM hallucinated interaction_id={passed_id!r}, overriding with real={real_interaction_id!r}")
-                    args["interaction_id"] = real_interaction_id
-                elif is_fake and not real_interaction_id:
-                    # no real id tracked yet - this tool will fail
-                    # return graceful error message
-                    print(f"[sanitizer] No real interaction_id in state, cannot call tool")
+            # if schedule follow up or edit interaction was called but ther was no real interaction_id: BLOCK the call
+            tool_name = tc.get("name", "")
+            if tool_name in ("schedule_follow_up", "edit_interaction"):
+                if not state.get("interaction_id") and "interaction_id" not in args:
                     error_msg = ToolMessage(
                         content=json.dumps({
-                            "error": "No interaction has been logged yet in this session."
-                            "Please log an interaction first before scheduling a follow-up."
+                            "error": (
+                                f"Cannot call {tool_name} - no interaction has been logged yet in this session. Please log an interaction first."
+                            ),
+                            "success": False,
                         }),
                         tool_call_id=tc.get("id", ""),
                     )
-                    return {**state, "messages": messages[:-1] + [last_message, error_msg]}
+                    return {
+                        **state,
+                        "messages": messages[:-1] + [last_message, error_msg],
+                    }
+                fixed_tool_calls.append({**tc, "args": args})
             
-            fixed_tool_calls.append({**tc, "args": args})
-        
-        # rebuild the AIMessage with corrected tool calls
-        fixed_message = AIMessage(
-            content=last_message.content,
-            tool_calls=fixed_tool_calls,
-        )
-        state = {**state, "messages": messages[:-1] + [fixed_message]}
+            fixed_message = AIMessage(
+                content=last_message.content,
+                tool_calls=fixed_tool_calls
+            )
+            state = {**state, "messages": messages[:-1] + [fixed_message]}
 
-    # run the real tool
-    result_state = _tool_node.invoke(state)
-
-    # KEY: extract interaction_id from tool results and store in state
-    result_state = _update_state_from_results(result_state)
-
-    return result_state;
-
+            result_state = _tool_node.invoke(state)
+            result_state = _update_state_from_results(result_state)
+            return result_state
 
 def _update_state_from_results(state: AgentState) -> AgentState:
     """

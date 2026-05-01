@@ -409,6 +409,12 @@ def schedule_follow_up(
     - `confirmation_message`
     - `interaction_draft_updates`
     """
+    if not interaction_id:
+        return {
+            "error": "No interaction has been logged yet. Please log an interaction first, then schedule a follow-up.",
+            "success": False,
+        }
+
     parsed_interaction_id = None
     if interaction_id and interaction_id != "None" and interaction_id != "null":
         try:
