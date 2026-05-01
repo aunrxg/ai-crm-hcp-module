@@ -363,12 +363,16 @@ def get_hcp_profile(hcp_id: str) -> dict:
         except Exception as e:
             return {"error": f"Groq API error while generating profile briefing. Please try again later.", "success": False}
 
-
         return {
             "hcp": hcp_payload,
             "recent_interactions": recent_payload,
             "llm_narrative": narrative,
             "day_since_last_visit": days_since,
+            "success": True,
+            "interaction_draft": {
+                "hcp_id": hcp_id,
+                "hcp_name": hcp.name,
+            }
         }
 
 

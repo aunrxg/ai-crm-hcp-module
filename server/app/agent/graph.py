@@ -99,49 +99,6 @@ def llm_node(state: AgentState) -> AgentState:
 
 _tool_node = ToolNode(TOOLS)
 
-def _sanitize_args(args: dict, state: AgentState) -> dict:
-    """
-    Clean up tool call arguments:
-    1. Fix hcp_id hallucinations
-    2. Fix interaction_id hallucinations  
-    3. Remove any None/null values for required ID fields rather than passing them and causing a 400 from Groq
-    """
-    real_hcp_id = state.get("hcp_id")
-    real_interaction_id = state.get("interaction_id")
-    cleaned = dict(args)
-
-    # fix hcp_id
-    if real_hcp_id and "hcp_id" in cleaned:
-        if not cleaned["hcp_id"] or cleaned["hcp_id"] in (None, "None", "null", "unknown"):
-            cleaned["hcp_id"] = real_hcp_id
-        elif cleaned["hcp_id"] != real_hcp_id:
-            cleaned["hcp_id"] = real_hcp_id
-
-    # fix interaction_id - if it's None/fake, remove it entirely rather then passing a bad value    
-    if real_interaction_id and "interaction_id" in cleaned:
-        val = cleaned["interaction_id"]
-        is_fake = (
-            val in None
-            or str(val).lower() in (
-                "none", "null", "unknown", "placeholder",
-                "last logged interaction id",
-                "last_logged_interaction_id",
-                "interaction_id", "",
-            )
-            or (isinstance(val, str) and len(val) < 10)
-        )
-        if is_fake:
-            if real_interaction_id:
-                cleaned["interaction_id"] = real_interaction_id
-            else:
-                del cleaned["interaction_id"]
-
-    # fix date field
-    for date_field in ("date", "due_date"):
-        if date_field in cleaned and cleaned[date_field] is None:
-            cleaned[date_field] = datetime.utcnow().date().isoformat()
-
-    return cleaned
 
 def sanitized_tool_node(state: AgentState) -> AgentState:
     """
@@ -154,36 +111,68 @@ def sanitized_tool_node(state: AgentState) -> AgentState:
     if real_hcp_id and last_message and hasattr(last_message, "tool_calls"):
         fixed_tool_calls = []
         for tc in last_message.tool_calls:
-            args = _sanitize_args(tc.get("args", {}), state)
+            args = dict(tc.get("args", {}))
 
-            # if schedule follow up or edit interaction was called but ther was no real interaction_id: BLOCK the call
-            tool_name = tc.get("name", "")
-            if tool_name in ("schedule_follow_up", "edit_interaction"):
-                if not state.get("interaction_id") and "interaction_id" not in args:
+            # force the hcp id if the llm used something else or left blank
+            if "hcp_id" in args and args["hcp_id"] != real_hcp_id:
+                print(f"[sanitizer] LLM passed hcp_id={args['hcp_id']!r}, overriding with real={real_hcp_id!r}")
+                args["hcp_id"] = real_hcp_id
+            elif "hcp_id" not in args:
+                args["hcp_id"] = real_hcp_id
+
+            # fix interaction_id halluccination
+            if "interaction_id" in args: 
+                real_interaction_id = state.get("interaction_id")
+                passed_id = args["interaction_id"]
+
+                # fake placeholders
+                is_fake = (
+                    not passed_id
+                    or passed_id.lower() in (
+                        "last logged interaction id",
+                        "last_logged_interaction_id", 
+                        "interaction_id",
+                        "none",
+                        "null",
+                        "unknown",
+                        "placeholder",
+                    )
+                    or len(passed_id) < 10
+                )
+
+                if is_fake and real_interaction_id:
+                    print(f"[sanitizer] LLM hallucinated interaction_id={passed_id!r}, overriding with real={real_interaction_id!r}")
+                    args["interaction_id"] = real_interaction_id
+                elif is_fake and not real_interaction_id:
+                    # no real id tracked yet - this tool will fail
+                    # return graceful error message
+                    print(f"[sanitizer] No real interaction_id in state, cannot call tool")
                     error_msg = ToolMessage(
                         content=json.dumps({
-                            "error": (
-                                f"Cannot call {tool_name} - no interaction has been logged yet in this session. Please log an interaction first."
-                            ),
-                            "success": False,
+                            "error": "No interaction has been logged yet in this session."
+                            "Please log an interaction first before scheduling a follow-up."
                         }),
                         tool_call_id=tc.get("id", ""),
                     )
-                    return {
-                        **state,
-                        "messages": messages[:-1] + [last_message, error_msg],
-                    }
-                fixed_tool_calls.append({**tc, "args": args})
+                    return {**state, "messages": messages[:-1] + [last_message, error_msg]}
             
-            fixed_message = AIMessage(
-                content=last_message.content,
-                tool_calls=fixed_tool_calls
-            )
-            state = {**state, "messages": messages[:-1] + [fixed_message]}
+            fixed_tool_calls.append({**tc, "args": args})
+        
+        # rebuild the AIMessage with corrected tool calls
+        fixed_message = AIMessage(
+            content=last_message.content,
+            tool_calls=fixed_tool_calls,
+        )
+        state = {**state, "messages": messages[:-1] + [fixed_message]}
 
-            result_state = _tool_node.invoke(state)
-            result_state = _update_state_from_results(result_state)
-            return result_state
+    # run the real tool
+    result_state = _tool_node.invoke(state)
+
+    # KEY: extract interaction_id from tool results and store in state
+    result_state = _update_state_from_results(result_state)
+
+    return result_state;
+
 
 def _update_state_from_results(state: AgentState) -> AgentState:
     """
@@ -405,6 +394,51 @@ def _extract_interaction_draft(messages: list, current_draft: dict) -> dict:
     return draft
 
 
+def _extract_final_response(result: AgentState) -> str:
+    """
+    Extract the best response string from the final agent state.
+    For tools that produce their own narrative (get_hcp_profile, 
+    summarize_and_analyze_visit), use that directly instead of the 
+    LLM's re-summary which tends to be vague.
+    """
+    messages = result.get("messages", [])
+
+    # Find the last ToolMessage — check if it has a narrative we should use directly
+    NARRATIVE_TOOLS = {"get_hcp_profile", "summarize_and_analyze_visit"}
+    
+    for msg in reversed(messages):
+        if not isinstance(msg, ToolMessage):
+            continue
+        try:
+            content = json.loads(msg.content) if isinstance(msg.content, str) else msg.content
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        if not isinstance(content, dict):
+            continue
+
+        # If this tool produced a narrative, use it directly — skip LLM re-summary
+        if content.get("llm_narrative"):
+            narrative = content["llm_narrative"]
+            
+            # Optionally append follow-up suggestions if present
+            suggestions = content.get("suggested_actions", [])
+            if suggestions:
+                items = "\n".join(f"• {s}" for s in suggestions)
+                narrative += f"\n\n**Suggested next steps:**\n{items}"
+            
+            return narrative
+        
+        break  # Only check the most recent ToolMessage
+
+    # Default — find the last AIMessage with no tool_calls (LLM's text response)
+    for msg in reversed(messages):
+        if isinstance(msg, AIMessage) and not getattr(msg, "tool_calls", None):
+            return msg.content
+
+    return ""
+
+
 async def run_agent(
     user_message: str,
     session_id: str,
@@ -433,24 +467,19 @@ async def run_agent(
 
     result = await graph.ainvoke(initial_state)
 
-    # extract the last non-tool-call AIMessage as the response
-    final_response = ""
+    final_response = _extract_final_response(result)
+
+     # find which tool was called this turn (if any)
+    tool_called = None
     for msg in reversed(result["messages"]):
-        if isinstance(msg, AIMessage) and not getattr(msg, "tool_calls", None):
-            final_response = msg.content
+        if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
+            tool_called = msg.tool_calls[0].get("name") if msg.tool_calls else None
             break
 
     updated_draft = _extract_interaction_draft(
         result["messages"],
         result.get("interaction_draft", {})
     )
-
-    # find which tool was called this turn (if any)
-    tool_called = None
-    for msg in reversed(result["messages"]):
-        if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
-            tool_called = msg.tool_calls[0].get("name") if msg.tool_calls else None
-            break
 
     # save session back to db
     _save_session(session_id, hcp_id, result['messages'])
