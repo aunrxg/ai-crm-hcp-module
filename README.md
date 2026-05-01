@@ -70,7 +70,7 @@
               ┌────────────┴────────────┐
               ▼                         ▼
       Groq API (LLM)            PostgreSQL DB
-  gemma2-9b-it (primary)     hcps / interactions /
+  llama-3.1-8b (primary)     hcps / interactions /
   llama-3.3-70b (complex)    follow_ups / agent_sessions
 ```
 
@@ -112,16 +112,16 @@ The `interaction_draft` field in `AgentState` is the key to the split-screen UX 
 
 | # | Tool | Trigger phrase examples | LLM used |
 |---|------|------------------------|----------|
-| 1 | `log_interaction` | "Met Dr. X today", "Just finished a call with..." | gemma2-9b-it |
-| 2 | `edit_interaction` | "Change sentiment to positive", "Add Metformin to products" | gemma2-9b-it |
-| 3 | `get_hcp_profile` | "Tell me about Dr. X", "Profile before my visit" | gemma2-9b-it |
+| 1 | `log_interaction` | "Met Dr. X today", "Just finished a call with..." | llama-3.1-8b-instant |
+| 2 | `edit_interaction` | "Change sentiment to positive", "Add Metformin to products" | llama-3.1-8b-instant |
+| 3 | `get_hcp_profile` | "Tell me about Dr. X", "Profile before my visit" | llama-3.1-8b-instant |
 | 4 | `schedule_follow_up` | "Follow up in 10 days", "Schedule sample delivery" | llama-3.3-70b-versatile |
 | 5 | `summarize_and_analyze_visit` | "Analyze my visits", "How is my engagement with Dr. X?" | llama-3.3-70b-versatile |
 
 ### Tool 1 — `log_interaction` (detailed)
 
 Takes raw chat input and:
-1. Calls `gemma2-9b-it` to extract structured entities:
+1. Calls `llama-3.1-8b-instant` to extract structured entities:
    ```json
    {
      "drugs_mentioned": ["Rosuvastatin", "Atorvastatin"],
@@ -218,16 +218,14 @@ git clone https://github.com/aunrxg/ai-crm-hcp.git
 cd ai-crm-hcp
 
 # 2. Set up environment
-cp backend/.env.example backend/.env
-# Edit backend/.env and add your GROQ_API_KEY
+cp server/.env.example server/.env
+# Edit server/.env and add your GROQ_API_KEY
 
 # 3. Start all services
 docker-compose up --build
+# (The database is automatically created and seeded on startup)
 
-# 4. Seed the database (in a new terminal)
-docker-compose exec backend python seed.py
-
-# 5. Open the app
+# 4. Open the app
 # Frontend:  http://localhost:5173
 # API docs:  http://localhost:8000/docs
 ```
@@ -236,23 +234,23 @@ docker-compose exec backend python seed.py
 
 ```bash
 # ── Backend ──────────────────────────────────────
-cd backend
+cd server
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
 cp .env.example .env
 # Add your GROQ_API_KEY to .env
+# Set DATABASE_URL=postgresql://postgres:postgres@localhost:5433/crm
 
-# Start PostgreSQL (or use a cloud DB, update DATABASE_URL in .env)
-# Then run migrations:
-alembic upgrade head
-python seed.py                  # seed HCP data
+# Start PostgreSQL via docker-compose (just the db service)
+docker-compose up -d db
 
+# Run the FastAPI server (it auto-seeds the DB)
 uvicorn app.main:app --reload --port 8000
 
 # ── Frontend ─────────────────────────────────────
-cd frontend
+cd client
 npm install
 npm run dev
 # Open http://localhost:5173
@@ -263,10 +261,10 @@ npm run dev
 ## 🔑 Environment Variables
 
 ```env
-# backend/.env
+# server/.env
 GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-DATABASE_URL=postgresql://postgres:password@localhost:5432/crm_hcp
-GROQ_PRIMARY_MODEL=gemma2-9b-it
+DATABASE_URL=postgresql://postgres:postgres@db:5432/crm
+GROQ_PRIMARY_MODEL=llama-3.1-8b-instant
 GROQ_LARGE_MODEL=llama-3.3-70b-versatile
 CORS_ORIGINS=["http://localhost:5173"]
 ```
@@ -338,9 +336,9 @@ The `interaction_draft` from this response is dispatched directly to Redux, whic
 ```
 ai-crm-hcp/
 │
-├── backend/
+├── server/
 │   ├── app/
-│   │   ├── main.py              # FastAPI app, CORS, startup
+│   │   ├── main.py              # FastAPI app, CORS, auto-seed DB
 │   │   ├── config.py            # Pydantic settings
 │   │   ├── database.py          # SQLAlchemy engine, session
 │   │   ├── models.py            # ORM models
@@ -349,18 +347,17 @@ ai-crm-hcp/
 │   │   │   ├── chat.py          # POST /api/chat → agent
 │   │   │   ├── hcp.py           # HCP CRUD
 │   │   │   └── interactions.py  # Interaction CRUD
-│   │   └── agent/
-│   │       ├── state.py         # AgentState, InteractionDraft TypedDicts
-│   │       ├── tools.py         # All 5 @tool definitions
-│   │       └── graph.py         # StateGraph, run_agent()
-│   ├── alembic/                 # DB migrations
-│   ├── seed.py                  # Seed script (8 pharma HCPs)
+│   │   ├── agent/
+│   │   │   ├── state.py         # AgentState, InteractionDraft TypedDicts
+│   │   │   ├── tools.py         # All 5 @tool definitions with error handling
+│   │   │   └── graph.py         # StateGraph, run_agent()
+│   │   └── seed.py              # Seed script (auto-executed by main.py)
 │   ├── test_agent.py            # End-to-end tool tests
 │   ├── requirements.txt
 │   ├── Dockerfile
 │   └── .env.example
 │
-├── frontend/
+├── client/
 │   ├── src/
 │   │   ├── App.jsx                         # Root, Redux Provider
 │   │   ├── main.jsx
@@ -378,8 +375,8 @@ ai-crm-hcp/
 │   │   │   └── chatSlice.js                # messages, sessionId
 │   │   └── api/
 │   │       └── client.js                   # axios instance
-│   ├── index.html
-│   ├── vite.config.js
+│   ├── index.html                          # Favicon & Google Fonts
+│   ├── vite.config.js                      # Dev proxy to /api
 │   ├── tailwind.config.js
 │   ├── package.json
 │   └── Dockerfile
@@ -396,7 +393,7 @@ ai-crm-hcp/
 Run the end-to-end test suite against a running backend:
 
 ```bash
-cd backend
+cd server
 python test_agent.py
 ```
 
@@ -429,7 +426,7 @@ All 6 tests passed ✓
 | Migrations | Alembic | 1.13 |
 | AI agent framework | LangGraph | 0.1 |
 | LLM integration | LangChain-Groq | 0.1 |
-| Primary LLM | Groq gemma2-9b-it | — |
+| Primary LLM | Groq llama-3.1-8b-instant | — |
 | Secondary LLM | Groq llama-3.3-70b-versatile | — |
 | Database | PostgreSQL | 15 |
 | Containerization | Docker Compose | — |
@@ -448,7 +445,7 @@ LangGraph provides a `StateGraph` that persists the `interaction_draft` across m
 
 ### Why two Groq models?
 
-`gemma2-9b-it` is fast and accurate for structured extraction tasks (entity extraction, JSON generation). `llama-3.3-70b-versatile` is used for tasks requiring richer reasoning — multi-visit trend analysis and intelligent follow-up date suggestion — where the larger context window and reasoning capability matter.
+`llama-3.1-8b-instant` is fast and accurate for structured extraction tasks (entity extraction, JSON generation). `llama-3.3-70b-versatile` is used for tasks requiring richer reasoning — multi-visit trend analysis and intelligent follow-up date suggestion — where the larger context window and reasoning capability matter.
 
 ### Why PostgreSQL over MySQL?
 
@@ -504,5 +501,5 @@ PostgreSQL's native `JSONB` type is used for `products_discussed`, `entities_jso
 ## 👤 Author
 
 Built as part of the AI-First CRM Round 1 Assignment.  
-Models used: `gemma2-9b-it` · `llama-3.3-70b-versatile` via Groq.  
+Models used: `llama-3.1-8b-instant` · `llama-3.3-70b-versatile` via Groq.  
 AI agent framework: LangGraph.
