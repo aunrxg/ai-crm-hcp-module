@@ -1,22 +1,12 @@
-import React, { useState, useEffect } from "react";
-import { useSelector, useDispatch } from "react-redux";
-import ChatPanel from "./ChatPanel";
+import React from "react";
+import { useDispatch } from "react-redux";
+import ChatSidebar from "./ChatSidebar";
 import FormPanel from "./FormPanel";
-import HCPSelector from "./HCPSelector";
 import { clearDraft, setIsSaved } from "../store/InteractionSlice";
 import { resetChat } from "../store/chatSlice";
 
 export default function LogInteractionScreen() {
   const dispatch = useDispatch();
-  const messages = useSelector((state) => state.chat.messages);
-  const [showHint, setShowHint] = useState(true);
-
-  // Dismiss hint after the first user message
-  useEffect(() => {
-    if (messages.length > 0 && showHint) {
-      setShowHint(false);
-    }
-  }, [messages, showHint]);
 
   const currentDate = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -32,9 +22,9 @@ export default function LogInteractionScreen() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 text-slate-900 overflow-hidden font-inter">
+    <div className="flex flex-col h-screen bg-[#f8fafc] text-slate-900 overflow-hidden font-inter">
       {/* Top Bar */}
-      <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-slate-200 z-20">
+      <header className="sticky top-0 flex items-center justify-between px-6 py-4 bg-white border-b border-slate-200 z-50 shrink-0">
         <div className="flex items-center space-x-4">
           <div className="bg-indigo-600 p-2 rounded-lg shadow-lg shadow-indigo-200">
             <svg
@@ -79,55 +69,20 @@ export default function LogInteractionScreen() {
         </div>
       </header>
 
-      {/* Selector Area */}
-      <div className="bg-white px-6 py-4 border-b border-slate-200 shadow-sm z-10">
-        <HCPSelector />
-        
-        {showHint && (
-          <div className="mt-4 flex items-center space-x-2 bg-indigo-50 px-4 py-2.5 rounded-xl border border-indigo-100 text-indigo-700 text-sm animate-in slide-in-from-top duration-500">
-            <span className="text-lg">💬</span>
-            <p className="font-medium">
-              Use the chat on the left to log interactions. The form on the right updates automatically.
-            </p>
-            <button 
-              onClick={() => setShowHint(false)}
-              className="ml-auto text-indigo-400 hover:text-indigo-600 transition-colors"
-            >
-              ✕
-            </button>
+      {/* Main Layout */}
+      <main className="flex-1 overflow-hidden p-4">
+        <div className="h-full grid grid-cols-1 lg:grid-cols-[65%_35%] gap-4 lg:w-[calc(100%-1rem)]">
+          
+          {/* Left Column: Form Panel */}
+          <div className="h-full overflow-y-auto bg-white rounded-xl shadow-sm border border-slate-200 pb-[45vh] lg:pb-0">
+            <FormPanel />
           </div>
-        )}
-      </div>
 
-      {/* Main Split Layout */}
-      <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
-        {/* Left: Form Panel */}
-        <div className="w-full md:w-1/2 h-full bg-slate-50 border-t md:border-t-0 md:border-l border-slate-200 overflow-hidden">
-          <FormPanel />
-        </div>
-
-        {/* Divider */}
-        {/* <div className="hidden md:flex absolute left-1/2 top-0 bottom-0 w-px bg-slate-200 z-10 items-center justify-center">
-          <div className="bg-white border border-slate-200 p-1.5 rounded-full shadow-sm text-slate-400">
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 7h8m0 0l-4-4m4 4l-4 4m0 6H8m0 0l4 4m-4-4l4-4"
-              />
-            </svg>
+          {/* Right Column: Chat Sidebar */}
+          <div className="fixed bottom-0 left-0 right-0 h-[45vh] bg-white border-t border-slate-200 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.2)] z-40 overflow-y-auto lg:relative lg:h-full lg:rounded-xl lg:shadow-sm lg:border lg:border-slate-200 lg:z-auto">
+            <ChatSidebar />
           </div>
-        </div> */}
 
-        {/* Right: Chat Panel */}
-        <div className="w-full md:w-1/2 h-full bg-white relative z-0">
-          <ChatPanel />
         </div>
       </main>
     </div>

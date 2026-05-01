@@ -1,314 +1,410 @@
-import React from "react";
-import { useSelector } from "react-redux";
-
-const TooltipWrapper = ({ children }) => (
-  <div className="relative group cursor-help">
-    {children}
-    <div className="absolute z-10 bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-      Update via chat →
-    </div>
-  </div>
-);
-
-const Section = ({ title, children }) => (
-  <section className="mb-8 last:mb-0">
-    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
-      {title}
-    </h3>
-    {children}
-  </section>
-);
-
-const Badge = ({ children, colorClass = "bg-gray-100 text-gray-600" }) => (
-  <span className={`px-2 py-1 rounded-full text-xs font-medium ${colorClass} transition-all duration-300`}>
-    {children}
-  </span>
-);
-
-const Placeholder = ({ text = "Not specified" }) => (
-  <span className="text-gray-300 italic text-sm">{text}</span>
-);
-
-const Skeleton = ({ className = "h-4 w-24" }) => (
-  <div className={`bg-gray-200 rounded animate-pulse ${className}`}></div>
-);
+import React, { useState, useEffect, useRef } from "react";
+import { useSelector, useDispatch } from "react-redux";
+import { updateDraft, setIsSaved } from "../store/InteractionSlice";
+import { searchHCPs, submitForm } from "../api/client";
 
 export default function FormPanel() {
-  const { draft, isSaved, lastSavedId } = useSelector((state) => state.interaction);
-  const { loading } = useSelector((state) => state.chat);
+  const { draft, isSaved } = useSelector((state) => state.interaction);
+  const dispatch = useDispatch();
 
-  try {
-    const sentimentColors = {
-      positive: "bg-green-100 text-green-700",
-      neutral: "bg-gray-100 text-gray-600",
-      negative: "bg-red-100 text-red-700",
-    };
+  const handleUpdate = (field, value) => {
+    dispatch(updateDraft({ [field]: value }));
+  };
 
-    const entities = typeof draft.entities_json === "string" 
-      ? JSON.parse(draft.entities_json || "{}") 
-      : (draft.entities_json || {});
+  // HCP Search State
+  const [searchQuery, setSearchQuery] = useState(draft.hcp_name || "");
+  const [searchResults, setSearchResults] = useState([]);
+  const [showDropdown, setShowDropdown] = useState(false);
 
-    return (
-      <div className="h-full flex flex-col bg-white overflow-hidden shadow-inner">
-        {/* Save Banner */}
-        {isSaved && !loading && (
-          <div className="bg-green-50 border-b border-green-100 px-6 py-3 flex items-center justify-between animate-in fade-in slide-in-from-top duration-500">
-            <div className="flex items-center space-x-2 text-green-700">
-              <span className="text-lg">✓</span>
-              <span className="text-sm font-medium">Interaction saved to database</span>
+  useEffect(() => {
+    setSearchQuery(draft.hcp_name || "");
+  }, [draft.hcp_name]);
+
+  useEffect(() => {
+    if (!showDropdown || !searchQuery || searchQuery.length < 2) return;
+    const timeoutId = setTimeout(() => {
+      searchHCPs(searchQuery)
+        .then(res => setSearchResults(res.data))
+        .catch(console.error);
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery, showDropdown]);
+
+  // Attendees Local State
+  const [attendeesText, setAttendeesText] = useState((draft.attendees || []).join(", "));
+  const attendeesRef = useRef(draft.attendees);
+
+  useEffect(() => {
+    if (draft.attendees !== attendeesRef.current) {
+      attendeesRef.current = draft.attendees;
+      const currentArray = attendeesText.split(",").map(s => s.trim()).filter(Boolean);
+      if (JSON.stringify(currentArray) !== JSON.stringify(draft.attendees)) {
+        setAttendeesText((draft.attendees || []).join(", "));
+      }
+    }
+  }, [draft.attendees, attendeesText]);
+
+  // Materials & Samples State
+  const [materialText, setMaterialText] = useState("");
+  const [showMaterialInput, setShowMaterialInput] = useState(false);
+
+  const [sampleText, setSampleText] = useState("");
+  const [showSampleInput, setShowSampleInput] = useState(false);
+
+  // Saving State
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setIsSaving(true);
+    try {
+      await submitForm(draft);
+      dispatch(setIsSaved(true));
+    } catch (err) {
+      console.error(err);
+      alert("Error saving: " + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="p-6 font-inter h-full flex flex-col bg-white rounded-xl shadow-sm">
+      <h2 className="text-xl font-bold text-slate-900 mb-6 shrink-0">Interaction Details</h2>
+      
+      <div className="flex-1">
+        {/* SECTION 1 — Top row */}
+        <div className="grid grid-cols-2 gap-6 mb-5">
+          <div className="relative">
+            <label className="block text-sm font-medium text-slate-700 mb-1">HCP Name</label>
+            <input 
+              type="text" 
+              placeholder="Search or select HCP..."
+              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setShowDropdown(true);
+                if (!e.target.value) {
+                  handleUpdate("hcp_id", null);
+                  handleUpdate("hcp_name", null);
+                }
+              }}
+              onFocus={() => setShowDropdown(true)}
+              onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+            />
+            {showDropdown && searchResults.length > 0 && (
+              <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                {searchResults.map(hcp => (
+                  <div 
+                    key={hcp.id}
+                    className="px-4 py-2 hover:bg-slate-50 cursor-pointer border-b last:border-b-0 border-slate-100"
+                    onClick={() => {
+                      handleUpdate("hcp_id", hcp.id);
+                      handleUpdate("hcp_name", hcp.name);
+                      setSearchQuery(hcp.name);
+                      setShowDropdown(false);
+                    }}
+                  >
+                    <div className="font-medium text-sm text-slate-900">{hcp.name}</div>
+                    <div className="text-xs text-slate-500">{hcp.specialty} • {hcp.hospital}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Interaction Type</label>
+            <select 
+              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+              value={draft.interaction_type || "Meeting"}
+              onChange={(e) => handleUpdate("interaction_type", e.target.value)}
+            >
+              <option value="Meeting">Meeting</option>
+              <option value="Visit">Visit</option>
+              <option value="Call">Call</option>
+              <option value="Email">Email</option>
+              <option value="Conference">Conference</option>
+            </select>
+          </div>
+        </div>
+
+        {/* SECTION 2 — Second row */}
+        <div className="grid grid-cols-2 gap-6 mb-5">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>
+            <input 
+              type="date"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              value={draft.date || new Date().toISOString().split('T')[0]}
+              onChange={(e) => handleUpdate("date", e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Time</label>
+            <input 
+              type="time"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              value={draft.time || new Date().toLocaleTimeString('en-US', { hour12: false, hour: "2-digit", minute: "2-digit" })}
+              onChange={(e) => handleUpdate("time", e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* SECTION 3 — Attendees */}
+        <div className="mb-5">
+          <label className="block text-sm font-medium text-slate-700 mb-1">Attendees</label>
+          <input 
+            type="text"
+            placeholder="Enter names or search..."
+            className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            value={attendeesText}
+            onChange={(e) => {
+              setAttendeesText(e.target.value);
+              handleUpdate("attendees", e.target.value.split(",").map(s => s.trim()).filter(Boolean));
+            }}
+          />
+        </div>
+
+        {/* SECTION 4 — Topics Discussed */}
+        <div className="mb-5">
+          <label className="block text-sm font-medium text-slate-700 mb-1">Topics Discussed</label>
+          <textarea 
+            rows={4}
+            placeholder="Enter key discussion points..."
+            className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y"
+            value={draft.topics_discussed || ""}
+            onChange={(e) => handleUpdate("topics_discussed", e.target.value)}
+          ></textarea>
+          
+          <button 
+            className="mt-2 flex items-center space-x-2 px-3 py-1.5 border border-slate-300 rounded-md text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+            onClick={(e) => { e.preventDefault(); alert("Voice note feature coming soon"); }}
+          >
+            <span>🎙</span>
+            <span>Summarize from Voice Note (Requires Consent)</span>
+          </button>
+        </div>
+
+        {/* SECTION 5 — Materials Shared / Samples Distributed */}
+        <div className="mb-5">
+          <h4 className="text-base font-medium text-slate-900 mb-4">Materials Shared / Samples Distributed</h4>
+          
+          <div className="mb-4">
+            <div className="flex justify-between items-center mb-2">
+              <label className="text-sm font-medium text-slate-700">Materials Shared</label>
+              <button 
+                onClick={(e) => { e.preventDefault(); setShowMaterialInput(true); }}
+                className="px-2 py-1 text-xs border border-slate-300 rounded hover:bg-slate-50 text-slate-700"
+              >
+                🔍 Search/Add
+              </button>
             </div>
-            <span className="text-[10px] bg-green-100 text-green-600 px-2 py-0.5 rounded font-mono uppercase tracking-tighter">
-              ID: {lastSavedId || "N/A"}
-            </span>
+            
+            {showMaterialInput && (
+              <input 
+                type="text"
+                autoFocus
+                className="mb-2 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="Type material and press Enter..."
+                value={materialText}
+                onChange={(e) => setMaterialText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && materialText.trim()) {
+                    e.preventDefault();
+                    const newArr = [...(draft.materials_shared || []), materialText.trim()];
+                    handleUpdate("materials_shared", newArr);
+                    setMaterialText("");
+                    setShowMaterialInput(false);
+                  } else if (e.key === "Escape") {
+                    setShowMaterialInput(false);
+                  }
+                }}
+                onBlur={() => setShowMaterialInput(false)}
+              />
+            )}
+
+            {!(draft.materials_shared?.length > 0) ? (
+              <p className="text-sm text-slate-400 italic">No materials added</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {draft.materials_shared.map((m, i) => (
+                  <span key={i} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                    {m}
+                    <button 
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleUpdate("materials_shared", draft.materials_shared.filter((_, idx) => idx !== i));
+                      }}
+                      className="ml-1.5 text-indigo-500 hover:text-indigo-700"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <label className="text-sm font-medium text-slate-700">Samples Distributed</label>
+              <button 
+                onClick={(e) => { e.preventDefault(); setShowSampleInput(true); }}
+                className="px-2 py-1 text-xs border border-slate-300 rounded hover:bg-slate-50 text-slate-700"
+              >
+                Add Sample
+              </button>
+            </div>
+            
+            {showSampleInput && (
+              <input 
+                type="text"
+                autoFocus
+                className="mb-2 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="Type sample and press Enter..."
+                value={sampleText}
+                onChange={(e) => setSampleText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && sampleText.trim()) {
+                    e.preventDefault();
+                    const newArr = [...(draft.samples_distributed || []), sampleText.trim()];
+                    handleUpdate("samples_distributed", newArr);
+                    setSampleText("");
+                    setShowSampleInput(false);
+                  } else if (e.key === "Escape") {
+                    setShowSampleInput(false);
+                  }
+                }}
+                onBlur={() => setShowSampleInput(false)}
+              />
+            )}
+
+            {!(draft.samples_distributed?.length > 0) ? (
+              <p className="text-sm text-slate-400 italic">No samples added</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {draft.samples_distributed.map((s, i) => (
+                  <span key={i} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
+                    {s}
+                    <button 
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleUpdate("samples_distributed", draft.samples_distributed.filter((_, idx) => idx !== i));
+                      }}
+                      className="ml-1.5 text-teal-500 hover:text-teal-700"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* SECTION 6 — Sentiment */}
+        <div className="mb-5">
+          <label className="block text-sm font-medium text-slate-700 mb-2">Observed/Inferred HCP Sentiment</label>
+          <div className="flex items-center gap-6">
+            {[
+              { label: "Positive", value: "positive", colorClass: "bg-green-500" },
+              { label: "Neutral", value: "neutral", colorClass: "bg-slate-500" },
+              { label: "Negative", value: "negative", colorClass: "bg-red-500" },
+            ].map(opt => {
+              const isSelected = (draft.sentiment || "neutral").toLowerCase() === opt.value;
+              return (
+                <label key={opt.value} className="flex items-center space-x-2 cursor-pointer group">
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? 'border-slate-400' : 'border-slate-300 group-hover:border-slate-400'}`}>
+                    {isSelected && <div className={`w-2 h-2 rounded-full ${opt.colorClass}`}></div>}
+                  </div>
+                  <span className="text-sm text-slate-700">{opt.label}</span>
+                  <input 
+                    type="radio" 
+                    name="sentiment" 
+                    value={opt.value} 
+                    checked={isSelected}
+                    onChange={(e) => handleUpdate("sentiment", e.target.value)}
+                    className="hidden"
+                  />
+                </label>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* SECTION 7 — Outcomes */}
+        <div className="mb-5">
+          <label className="block text-sm font-medium text-slate-700 mb-1">Outcomes</label>
+          <textarea 
+            rows={3}
+            placeholder="Key outcomes or agreements..."
+            className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y"
+            value={draft.outcomes || ""}
+            onChange={(e) => handleUpdate("outcomes", e.target.value)}
+          ></textarea>
+        </div>
+
+        {/* SECTION 8 — Follow up Actions */}
+        <div className="mb-5">
+          <label className="block text-sm font-medium text-slate-700 mb-1">Follow up Actions</label>
+          <textarea 
+            rows={3}
+            placeholder="Enter next steps or tasks..."
+            className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y"
+            value={draft.follow_up_actions || ""}
+            onChange={(e) => handleUpdate("follow_up_actions", e.target.value)}
+          ></textarea>
+        </div>
+
+        {/* SECTION 9 — AI Suggested Follow-ups */}
+        {draft.ai_suggested_follow_ups?.length > 0 && (
+          <div className="mb-5">
+            <label className="block text-xs font-medium text-slate-500 mb-2 flex items-center">
+              <span className="mr-1">✨</span> AI Suggested Follow-ups:
+            </label>
+            <div className="space-y-2">
+              {draft.ai_suggested_follow_ups.map((suggestion, idx) => (
+                <div key={idx} className="flex items-start justify-between bg-indigo-50 rounded px-3 py-2 border border-indigo-100">
+                  <div className="flex-1 mr-2 flex items-start">
+                    <span className="mr-2 text-indigo-400">•</span>
+                    <span className="text-sm text-slate-600">{suggestion}</span>
+                  </div>
+                  <button 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const currentActions = draft.follow_up_actions ? draft.follow_up_actions.trim() : "";
+                      const newActions = currentActions ? currentActions + "\n" + suggestion : suggestion;
+                      handleUpdate("follow_up_actions", newActions);
+                    }}
+                    className="text-xs font-medium text-indigo-600 hover:text-indigo-800 bg-white border border-indigo-200 rounded px-2 py-1 shrink-0 mt-0.5"
+                  >
+                    + Add
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
-
-        <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
-          {/* Section 1: Interaction Details */}
-          <Section title="Interaction Details">
-            <div className="grid grid-cols-2 gap-6">
-              <TooltipWrapper>
-                <div className="bg-gray-50 rounded-xl p-4 transition-all hover:bg-gray-100/50">
-                  <p className="text-[10px] text-gray-400 mb-1 uppercase font-bold">Type</p>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-lg">
-                      {draft.interaction_type === "visit" ? "🤝" : 
-                       draft.interaction_type === "call" ? "📞" : 
-                       draft.interaction_type === "email" ? "✉️" : "📝"}
-                    </span>
-                    <span className="font-semibold text-gray-800 capitalize">
-                      {loading ? <Skeleton className="h-5 w-20" /> : (draft.interaction_type || <Placeholder />)}
-                    </span>
-                  </div>
-                </div>
-              </TooltipWrapper>
-
-              <TooltipWrapper>
-                <div className="bg-gray-50 rounded-xl p-4 transition-all hover:bg-gray-100/50">
-                  <p className="text-[10px] text-gray-400 mb-1 uppercase font-bold">Date & Duration</p>
-                  <div className="flex flex-col space-y-1 mt-1">
-                    {loading ? (
-                      <>
-                        <Skeleton className="h-4 w-24" />
-                        <Skeleton className="h-3 w-16" />
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-sm font-medium text-gray-800">
-                          {draft.date || <Placeholder text="Date TBD" />}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {draft.duration_minutes ? `${draft.duration_minutes} minutes` : <Placeholder text="Duration TBD" />}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </TooltipWrapper>
-
-              <TooltipWrapper>
-                <div className="bg-gray-50 rounded-xl p-4 transition-all hover:bg-gray-100/50">
-                  <p className="text-[10px] text-gray-400 mb-1 uppercase font-bold">Sentiment</p>
-                  <div className="mt-1">
-                    {loading ? <Skeleton className="h-6 w-20 rounded-full" /> : (
-                      draft.sentiment ? (
-                        <Badge colorClass={sentimentColors[draft.sentiment.toLowerCase()] || "bg-gray-100"}>
-                          {draft.sentiment.toUpperCase()}
-                        </Badge>
-                      ) : (
-                        <Placeholder />
-                      )
-                    )}
-                  </div>
-                </div>
-              </TooltipWrapper>
-
-              <TooltipWrapper>
-                <div className="bg-gray-50 rounded-xl p-4 transition-all hover:bg-gray-100/50">
-                  <p className="text-[10px] text-gray-400 mb-1 uppercase font-bold">Status</p>
-                  <div className="mt-1">
-                    {loading ? <Skeleton className="h-6 w-20 rounded-full" /> : (
-                      <Badge colorClass={isSaved ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}>
-                        {isSaved ? "SYNCED" : "DRAFT"}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              </TooltipWrapper>
-            </div>
-          </Section>
-
-          {/* Section 2: Products Discussed */}
-          <Section title="Products Discussed">
-            <TooltipWrapper>
-              <div className="flex flex-wrap gap-2 min-h-[40px] p-2 rounded-xl transition-all hover:bg-gray-50">
-                {loading ? (
-                  <>
-                    <Skeleton className="h-8 w-24 rounded-full" />
-                    <Skeleton className="h-8 w-32 rounded-full" />
-                  </>
-                ) : draft.products_discussed?.length > 0 ? (
-                  draft.products_discussed.map((product, i) => (
-                    <span key={i} className="px-3 py-1 rounded-full text-sm font-medium border border-indigo-200 text-indigo-600 bg-indigo-50/30 animate-in zoom-in duration-300">
-                      {product}
-                    </span>
-                  ))
-                ) : (
-                  <Placeholder text="No products mentioned yet" />
-                )}
-              </div>
-            </TooltipWrapper>
-          </Section>
-
-          {/* Section 3: AI Summary */}
-          <Section title="AI-Generated Summary">
-            <TooltipWrapper>
-              <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition-all hover:shadow-md">
-                <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500"></div>
-                <div className="p-5 min-h-[80px]">
-                  {loading ? (
-                    <div className="space-y-2">
-                      <Skeleton className="h-4 w-full" />
-                      <Skeleton className="h-4 w-5/6" />
-                      <Skeleton className="h-4 w-4/6" />
-                    </div>
-                  ) : draft.ai_summary ? (
-                    <p className="text-sm text-gray-700 leading-relaxed animate-in fade-in slide-in-from-left duration-500">
-                      {draft.ai_summary}
-                    </p>
-                  ) : (
-                    <Placeholder text="Summary will appear after logging the interaction." />
-                  )}
-                </div>
-              </div>
-            </TooltipWrapper>
-          </Section>
-
-          {/* Section 4: Extracted Entities */}
-          <Section title="Extracted Entities">
-            <div className="space-y-6">
-              <TooltipWrapper>
-                <div className="p-3 rounded-xl hover:bg-gray-50 transition-colors">
-                  <p className="text-[10px] text-gray-400 mb-2 uppercase font-bold flex items-center">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 mr-1.5"></span>
-                    Drugs Mentioned
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {loading ? <Skeleton className="h-6 w-28 rounded-full" /> : 
-                     entities.drugs_mentioned?.length > 0 ? (
-                      entities.drugs_mentioned.map((d, i) => <Badge key={i} colorClass="bg-green-50 text-green-700 border border-green-100">{d}</Badge>)
-                    ) : <Placeholder />}
-                  </div>
-                </div>
-              </TooltipWrapper>
-
-              <TooltipWrapper>
-                <div className="p-3 rounded-xl hover:bg-gray-50 transition-colors">
-                  <p className="text-[10px] text-gray-400 mb-2 uppercase font-bold flex items-center">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 mr-1.5"></span>
-                    Objections Raised
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {loading ? <Skeleton className="h-6 w-32 rounded-full" /> :
-                     entities.objections?.length > 0 ? (
-                      entities.objections.map((o, i) => <Badge key={i} colorClass="bg-red-50 text-red-700 border border-red-100">{o}</Badge>)
-                    ) : <Placeholder />}
-                  </div>
-                </div>
-              </TooltipWrapper>
-
-              <TooltipWrapper>
-                <div className="p-3 rounded-xl hover:bg-gray-50 transition-colors">
-                  <p className="text-[10px] text-gray-400 mb-2 uppercase font-bold flex items-center">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5"></span>
-                    Competitors
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {loading ? <Skeleton className="h-6 w-24 rounded-full" /> :
-                     entities.competitors?.length > 0 ? (
-                      entities.competitors.map((c, i) => <Badge key={i} colorClass="bg-amber-50 text-amber-700 border border-amber-100">{c}</Badge>)
-                    ) : <Placeholder />}
-                  </div>
-                </div>
-              </TooltipWrapper>
-
-              <TooltipWrapper>
-                <div className="p-3 rounded-xl hover:bg-gray-50 transition-colors">
-                  <p className="text-[10px] text-gray-400 mb-2 uppercase font-bold flex items-center">
-                    <span className="w-1.5 h-1.5 rounded-full bg-gray-400 mr-1.5"></span>
-                    Action Items
-                  </p>
-                  <div className="space-y-2">
-                    {loading ? (
-                      <>
-                        <Skeleton className="h-4 w-full" />
-                        <Skeleton className="h-4 w-3/4" />
-                      </>
-                    ) : entities.action_items?.length > 0 ? (
-                      entities.action_items.map((a, i) => (
-                        <p key={i} className="text-sm text-gray-600 flex items-start">
-                          <span className="mr-2 mt-1.5 w-1 h-1 rounded-full bg-gray-300 shrink-0"></span>
-                          {a}
-                        </p>
-                      ))
-                    ) : <Placeholder />}
-                  </div>
-                </div>
-              </TooltipWrapper>
-            </div>
-          </Section>
-
-          {/* Section 5: Follow-up */}
-          <Section title="Follow-up Plan">
-            <TooltipWrapper>
-              {loading ? (
-                <div className="bg-gray-100 rounded-2xl p-5 shadow-sm animate-pulse min-h-[120px]">
-                   <div className="flex justify-between mb-4">
-                     <Skeleton className="h-10 w-10 rounded-xl" />
-                     <div className="space-y-2 flex flex-col items-end">
-                       <Skeleton className="h-3 w-16" />
-                       <Skeleton className="h-4 w-24" />
-                     </div>
-                   </div>
-                   <Skeleton className="h-4 w-full mt-2" />
-                </div>
-              ) : draft.follow_up_date || draft.follow_up_task ? (
-                <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl p-5 text-white shadow-lg animate-in zoom-in duration-500">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="bg-white/20 p-2 rounded-xl backdrop-blur-sm">
-                      <span className="text-xl">📅</span>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[10px] text-indigo-100 uppercase font-bold">Due Date</p>
-                      <p className="font-semibold">{draft.follow_up_date || "No date set"}</p>
-                    </div>
-                  </div>
-                  <p className="text-sm text-indigo-50 font-medium leading-relaxed italic">
-                    "{draft.follow_up_task || "No task description provided"}"
-                  </p>
-                </div>
-              ) : (
-                <div className="border-2 border-dashed border-gray-100 rounded-2xl p-8 text-center">
-                  <p className="text-sm text-gray-400">No follow-up planned yet.</p>
-                </div>
-              )}
-            </TooltipWrapper>
-          </Section>
-        </div>
       </div>
-    );
-  } catch (error) {
-    console.error("FormPanel render error:", error);
-    return (
-      <div className="h-full flex items-center justify-center bg-gray-50 p-6 text-center">
-        <div className="bg-white p-8 rounded-2xl shadow-sm border border-red-100 max-w-sm">
-          <span className="text-4xl mb-4 block">⚠️</span>
-          <h3 className="text-lg font-bold text-gray-900 mb-2">Display Error</h3>
-          <p className="text-sm text-gray-500">
-            We encountered an issue displaying the interaction form. Your data is safe. Please refresh the page.
-          </p>
-        </div>
+
+      {/* BOTTOM — Save button */}
+      <div className="mt-8 shrink-0">
+        {isSaved ? (
+          <div className="w-full py-3 rounded-lg border border-green-200 bg-green-50 text-green-700 text-center font-medium flex items-center justify-center">
+            <span className="mr-2">✓</span> Saved
+          </div>
+        ) : (
+          <button 
+            onClick={handleSave}
+            disabled={isSaving}
+            className={`w-full py-3 rounded-lg font-medium text-white text-center transition-colors ${isSaving ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+          >
+            {isSaving ? "Saving..." : "Save Interaction"}
+          </button>
+        )}
       </div>
-    );
-  }
+    </div>
+  );
 }
